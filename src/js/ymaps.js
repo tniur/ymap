@@ -1,5 +1,5 @@
 let clusterer;
-
+// PR
 function getFeedbacksList() {
 	if (localStorage.getItem('feedbacks')) {
 		return JSON.parse(localStorage.getItem('feedbacks'));
