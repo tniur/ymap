@@ -1,9 +1,9 @@
-let feedbacks;
+let clusterer;
 
-if (localStorage.getItem('feedbacks')) {
-	feedbacks = JSON.parse(localStorage.getItem('feedbacks'));
-} else {
-	feedbacks = [];
+function getFeedbacksList() {
+	if (localStorage.getItem('feedbacks')) {
+		return JSON.parse(localStorage.getItem('feedbacks'));
+	}
 }
 
 function mapInit() {
@@ -15,27 +15,36 @@ function mapInit() {
 				behaviors: ['drag'],
 			});
 
-			let commonCluster = new ymaps.Clusterer({ clusterDisableClickZoom: true });
-			myMap.geoObjects.add(commonCluster);
+			clusterer = new ymaps.Clusterer({ clusterDisableClickZoom: true });
+			clusterer.options.set('hasBalloon', false);
+			myMap.geoObjects.add(clusterer);
 
 			if (localStorage.getItem('feedbacks')) {
-				for (const feedback of feedbacks) {
-					addCluster(myMap, feedback.coords, commonCluster);
+				const feedbacksList = getFeedbacksList();
+				let usedCoords = [];
+				for (const feedback of feedbacksList) {
+					const coords = JSON.stringify(feedback.coords);
+					if (usedCoords.indexOf(coords) == -1) {
+						addCluster(myMap, feedback.coords);
+						usedCoords.push(coords);
+					}
 				}
+			} else {
+				localStorage.setItem('feedbacks', JSON.stringify([]));
 			}
 
-			if (feedbacks)
-				myMap.events.add('click', (event) => {
-					const coords = event.get('coords');
-					openBalloon(myMap, coords, undefined, undefined, commonCluster);
-				});
+			myMap.events.add('click', (event) => {
+				const coords = event.get('coords');
+				openBalloon(myMap, coords);
+			});
 		});
 	});
 }
 
 function getOptionsCluster(coords) {
 	const clusterObjects = [];
-	for (const feedback of feedbacks) {
+	const feedbacksList = getFeedbacksList();
+	for (const feedback of feedbacksList) {
 		if (JSON.stringify(feedback.coords) == JSON.stringify(coords)) {
 			const geoObject = new ymaps.GeoObject({
 				geometry: { type: 'Point', coordinates: feedback.coords },
@@ -46,33 +55,32 @@ function getOptionsCluster(coords) {
 	return clusterObjects;
 }
 
-function addCluster(map, coords, commonCluster) {
-	const clusterer = new ymaps.Clusterer({ clusterDisableClickZoom: true });
-	clusterer.options.set('hasBalloon', false);
-
+function addCluster(map, coords) {
 	function addToCluster() {
 		const myGeoObjects = getOptionsCluster(coords);
-		map.geoObjects.add(clusterer);
 		clusterer.add(myGeoObjects);
-		// commonCluster
-		// Кластеризация работает, но перестуют обрабатываться
-		// события по клику
-		// commonCluster.add(myGeoObjects);
 		map.balloon.close();
 	}
 
 	clusterer.events.add('click', (event) => {
 		event.preventDefault();
-		openBalloon(map, coords, clusterer, addToCluster, commonCluster);
+
+		// Координаты кластера объединяющего несколько отзывов (кружок с цифрой) немного отличаются от кластека Поинта
+		// Из за этого эти координаты в последующем не пройдут поиск и балун откроется без отзывов
+		const coords = event.get('target')['geometry']['_coordinates'];
+
+		// При добавлении новых элемендов в существующий кластер,
+		// кол-во отзывов становится равно (n * 2 - 1), тоесть они складываются с теми, что уже были отмечены на карте
+		openBalloon(map, coords, clusterer, addToCluster);
 	});
 
 	addToCluster();
 }
 
-function getFeedbacksList(coords) {
+function getFeedbacksHTML(coords) {
 	let reviewListHTML = '';
 
-	for (const feedback of feedbacks) {
+	for (const feedback of getFeedbacksList()) {
 		if (JSON.stringify(feedback.coords) == JSON.stringify(coords)) {
 			reviewListHTML += `
 				<div class="feedback__item">
@@ -89,9 +97,9 @@ function getFeedbacksList(coords) {
 	return reviewListHTML;
 }
 
-async function openBalloon(map, coords, clusterer, fn, commonCluster) {
+async function openBalloon(map, coords, clusterer, fn) {
 	await map.balloon.open(coords, {
-		content: `<div class="feedbacks__list">${getFeedbacksList(coords)}</div>` + formTemplate,
+		content: `<div class="feedbacks__list">${getFeedbacksHTML(coords)}</div>` + formTemplate,
 	});
 
 	const balloon = document.querySelector('#form');
@@ -108,11 +116,10 @@ async function openBalloon(map, coords, clusterer, fn, commonCluster) {
 			comment: this.elements.comment.value,
 		};
 
-		feedbacks.push(feedback);
 		updateLocalStorage(feedback);
 
 		if (!fn) {
-			addCluster(map, coords, commonCluster);
+			addCluster(map, coords);
 		} else {
 			fn();
 		}
@@ -122,13 +129,9 @@ async function openBalloon(map, coords, clusterer, fn, commonCluster) {
 }
 
 function updateLocalStorage(update) {
-	if (localStorage.getItem('feedbacks')) {
-		const newLocalStorage = JSON.parse(localStorage.getItem('feedbacks'));
-		newLocalStorage.push(update);
-		localStorage.setItem('feedbacks', JSON.stringify(newLocalStorage));
-	} else {
-		localStorage.setItem('feedbacks', JSON.stringify([update]));
-	}
+	const newLocalStorage = JSON.parse(localStorage.getItem('feedbacks'));
+	newLocalStorage.push(update);
+	localStorage.setItem('feedbacks', JSON.stringify(newLocalStorage));
 }
 
 const formTemplate = [
