@@ -1,44 +1,9 @@
 let clusterer;
-// PR
+
 function getFeedbacksList() {
 	if (localStorage.getItem('feedbacks')) {
 		return JSON.parse(localStorage.getItem('feedbacks'));
 	}
-}
-
-function mapInit() {
-	document.addEventListener('DOMContentLoaded', () => {
-		ymaps.ready(() => {
-			const myMap = new ymaps.Map('map', {
-				center: [56.32656939915104, 44.00447397770388],
-				zoom: 13,
-				behaviors: ['drag'],
-			});
-
-			clusterer = new ymaps.Clusterer({ clusterDisableClickZoom: true });
-			clusterer.options.set('hasBalloon', false);
-			myMap.geoObjects.add(clusterer);
-
-			if (localStorage.getItem('feedbacks')) {
-				const feedbacksList = getFeedbacksList();
-				let usedCoords = [];
-				for (const feedback of feedbacksList) {
-					const coords = JSON.stringify(feedback.coords);
-					if (usedCoords.indexOf(coords) == -1) {
-						addCluster(myMap, feedback.coords);
-						usedCoords.push(coords);
-					}
-				}
-			} else {
-				localStorage.setItem('feedbacks', JSON.stringify([]));
-			}
-
-			myMap.events.add('click', (event) => {
-				const coords = event.get('coords');
-				openBalloon(myMap, coords);
-			});
-		});
-	});
 }
 
 function getOptionsCluster(coords) {
@@ -56,25 +21,61 @@ function getOptionsCluster(coords) {
 }
 
 function addCluster(map, coords) {
-	function addToCluster() {
-		const myGeoObjects = getOptionsCluster(coords);
-		clusterer.add(myGeoObjects);
-		map.balloon.close();
+	const myGeoObjects = getOptionsCluster(coords);
+	clusterer.add(myGeoObjects);
+	map.balloon.close();
+}
+
+function addClusterOnMap(map) {
+	const feedbacksList = getFeedbacksList();
+	let usedCoords = [];
+	for (const feedback of feedbacksList) {
+		const coords = JSON.stringify(feedback.coords);
+		if (usedCoords.indexOf(coords) == -1) {
+			addCluster(map, feedback.coords);
+			usedCoords.push(coords);
+		}
 	}
+}
 
-	clusterer.events.add('click', (event) => {
-		event.preventDefault();
+function mapInit() {
+	document.addEventListener('DOMContentLoaded', () => {
+		ymaps.ready(() => {
+			const myMap = new ymaps.Map('map', {
+				center: [56.32656939915104, 44.00447397770388],
+				zoom: 13,
+			});
 
-		// Координаты кластера объединяющего несколько отзывов (кружок с цифрой) немного отличаются от кластека Поинта
-		// Из за этого эти координаты в последующем не пройдут поиск и балун откроется без отзывов
-		const coords = event.get('target')['geometry']['_coordinates'];
+			clusterer = new ymaps.Clusterer({ clusterDisableClickZoom: true });
+			clusterer.options.set('hasBalloon', false);
+			myMap.geoObjects.add(clusterer);
 
-		// При добавлении новых элемендов в существующий кластер,
-		// кол-во отзывов становится равно (n * 2 - 1), тоесть они складываются с теми, что уже были отмечены на карте
-		openBalloon(map, coords, clusterer, addToCluster);
+			clusterer.events.add('click', (event) => {
+				event.preventDefault();
+
+				let coords;
+				if (event.get('target').getGeoObjects) {
+					const GeoObjects = event.get('target').getGeoObjects();
+					coords = GeoObjects[0]['geometry']['_coordinates'];
+				} else {
+					coords = event.get('target')['geometry']['_coordinates'];
+				}
+
+				openBalloon(myMap, coords);
+			});
+
+			if (localStorage.getItem('feedbacks')) {
+				addClusterOnMap(myMap);
+			} else {
+				localStorage.setItem('feedbacks', JSON.stringify([]));
+			}
+
+			myMap.events.add('click', (event) => {
+				const coords = event.get('coords');
+				openBalloon(myMap, coords);
+			});
+		});
 	});
-
-	addToCluster();
 }
 
 function getFeedbacksHTML(coords) {
@@ -97,7 +98,7 @@ function getFeedbacksHTML(coords) {
 	return reviewListHTML;
 }
 
-async function openBalloon(map, coords, clusterer, fn) {
+async function openBalloon(map, coords) {
 	await map.balloon.open(coords, {
 		content: `<div class="feedbacks__list">${getFeedbacksHTML(coords)}</div>` + formTemplate,
 	});
@@ -105,9 +106,6 @@ async function openBalloon(map, coords, clusterer, fn) {
 	const balloon = document.querySelector('#form');
 	balloon.addEventListener('submit', function (event) {
 		event.preventDefault();
-		if (clusterer) {
-			clusterer.removeAll();
-		}
 
 		const feedback = {
 			coords: coords,
@@ -117,14 +115,9 @@ async function openBalloon(map, coords, clusterer, fn) {
 		};
 
 		updateLocalStorage(feedback);
-
-		if (!fn) {
-			addCluster(map, coords);
-		} else {
-			fn();
-		}
-
 		map.balloon.close();
+		clusterer.removeAll();
+		addClusterOnMap(map);
 	});
 }
 
