@@ -53,15 +53,14 @@ function mapInit() {
 			clusterer.events.add('click', (event) => {
 				event.preventDefault();
 
-				let coords;
 				if (event.get('target').getGeoObjects) {
 					const GeoObjects = event.get('target').getGeoObjects();
-					coords = GeoObjects[0]['geometry']['_coordinates'];
+					const coords = GeoObjects[0]['geometry']['_coordinates'];
+					openBalloon(myMap, coords, GeoObjects);
 				} else {
-					coords = event.get('target')['geometry']['_coordinates'];
+					const coords = event.get('target')['geometry']['_coordinates'];
+					openBalloon(myMap, coords, [event.get('target')]);
 				}
-
-				openBalloon(myMap, coords);
 			});
 
 			if (localStorage.getItem('feedbacks')) {
@@ -72,35 +71,36 @@ function mapInit() {
 
 			myMap.events.add('click', (event) => {
 				const coords = event.get('coords');
-				openBalloon(myMap, coords);
+				openBalloon(myMap, coords, []);
 			});
 		});
 	});
 }
 
-function getFeedbacksHTML(coords) {
+function getFeedbacksHTML(currentGeoObjects) {
 	let reviewListHTML = '';
 
 	for (const feedback of getFeedbacksList()) {
-		if (JSON.stringify(feedback.coords) == JSON.stringify(coords)) {
+		if (currentGeoObjects.some((geoObject) => JSON.stringify(geoObject.geometry._coordinates) === JSON.stringify(feedback.coords))) {
 			reviewListHTML += `
-				<div class="feedback__item">
-					<div class="feedback__row">
-						<div class="feedback__name">${feedback.name}</div>
-						<div class="feedback__place">${feedback.place}</div>
-					</div>
-					<div class="feedback__row">
-						<div class="feedback__comment">${feedback.comment}</div>
-					</div>
-				</div>`;
+					<div class="feedback__item">
+						<div class="feedback__row">
+							<div class="feedback__name">${feedback.name}</div>
+							<div class="feedback__place">${feedback.place}</div>
+						</div>
+						<div class="feedback__row">
+							<div class="feedback__comment">${feedback.comment}</div>
+						</div>
+					</div>`;
 		}
 	}
+
 	return reviewListHTML;
 }
 
-async function openBalloon(map, coords) {
+async function openBalloon(map, coords, currentGeoObjects) {
 	await map.balloon.open(coords, {
-		content: `<div class="feedbacks__list">${getFeedbacksHTML(coords)}</div>` + formTemplate,
+		content: `<div class="feedbacks__list">${getFeedbacksHTML(currentGeoObjects)}</div>` + formTemplate,
 	});
 
 	const balloon = document.querySelector('#form');
